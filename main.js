@@ -107,19 +107,109 @@ function getOpenClawEntry() {
   return fs.existsSync(entry) ? entry : null;
 }
 
+function getOpenClawHome() {
+  return path.join(process.env.USERPROFILE || process.env.HOME || app.getPath('home'), '.openclaw');
+}
+
 function readOpenClawConfig() {
-  const candidates = [
-    path.join(process.env.USERPROFILE || process.env.HOME || '', '.openclaw', 'openclaw.json'),
-    path.join(app.getPath('home'), '.openclaw', 'openclaw.json')
-  ];
-  for (const p of candidates) {
-    try {
-      if (fs.existsSync(p)) {
-        return JSON.parse(fs.readFileSync(p, 'utf-8'));
-      }
-    } catch { /* ignore */ }
-  }
+  const configPath = path.join(getOpenClawHome(), 'openclaw.json');
+  try {
+    if (fs.existsSync(configPath)) {
+      return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    }
+  } catch { /* ignore */ }
   return null;
+}
+
+function ensureOpenClawConfig(provider, model, apiKey, port) {
+  const ocHome = getOpenClawHome();
+  const configPath = path.join(ocHome, 'openclaw.json');
+
+  const providerBaseUrls = {
+    zai: { baseUrl: 'https://open.bigmodel.cn/api/paas/v4', api: 'openai-completions' },
+    openai: { baseUrl: 'https://api.openai.com/v1', api: 'openai-completions' },
+    anthropic: { baseUrl: 'https://api.anthropic.com', api: 'anthropic-messages' },
+    deepseek: { baseUrl: 'https://api.deepseek.com/v1', api: 'openai-completions' },
+    moonshot: { baseUrl: 'https://api.moonshot.cn/v1', api: 'openai-completions' },
+    minimax: { baseUrl: 'https://api.minimax.chat/v1', api: 'openai-completions' },
+  };
+
+  const providerEnvKeys = {
+    zai: 'ZAI_API_KEY', openai: 'OPENAI_API_KEY', anthropic: 'ANTHROPIC_API_KEY',
+    deepseek: 'DEEPSEEK_API_KEY', moonshot: 'MOONSHOT_API_KEY', minimax: 'MINIMAX_API_KEY',
+  };
+
+  let existing = readOpenClawConfig();
+  let needsWrite = false;
+
+  if (!existing) {
+    fs.mkdirSync(ocHome, { recursive: true });
+    existing = {};
+    needsWrite = true;
+  }
+
+  if (!existing.gateway || existing.gateway.mode !== 'local') {
+    existing.gateway = deepMerge(existing.gateway || {}, {
+      port: port || 3002,
+      mode: 'local',
+      bind: 'loopback'
+    });
+    needsWrite = true;
+  }
+
+  if (model && (!existing.agents?.defaults?.model?.primary || needsWrite)) {
+    existing.agents = deepMerge(existing.agents || {}, {
+      defaults: { model: { primary: model } }
+    });
+    needsWrite = true;
+  }
+
+  if (provider && providerBaseUrls[provider]) {
+    const pCfg = providerBaseUrls[provider];
+    if (!existing.models?.providers?.[provider]) {
+      existing.models = deepMerge(existing.models || {}, {
+        providers: { [provider]: pCfg }
+      });
+      needsWrite = true;
+    }
+  }
+
+  if (apiKey && provider) {
+    const profileKey = `${provider}:default`;
+    if (!existing.auth?.profiles?.[profileKey]) {
+      existing.auth = deepMerge(existing.auth || {}, {
+        profiles: { [profileKey]: { provider, mode: 'api_key' } }
+      });
+      needsWrite = true;
+    }
+
+    const agentDir = path.join(ocHome, 'agents', 'main', 'agent');
+    const authFile = path.join(agentDir, 'auth-profiles.json');
+    try {
+      let authProfiles = {};
+      if (fs.existsSync(authFile)) {
+        authProfiles = JSON.parse(fs.readFileSync(authFile, 'utf-8'));
+      }
+      const envKey = providerEnvKeys[provider] || `${provider.toUpperCase()}_API_KEY`;
+      if (!authProfiles[profileKey]) {
+        fs.mkdirSync(agentDir, { recursive: true });
+        authProfiles[profileKey] = { apiKey, envKey };
+        fs.writeFileSync(authFile, JSON.stringify(authProfiles, null, 2), 'utf-8');
+      }
+    } catch (e) {
+      console.error('Auth profiles write error:', e);
+    }
+  }
+
+  if (needsWrite) {
+    try {
+      fs.writeFileSync(configPath, JSON.stringify(existing, null, 2), 'utf-8');
+    } catch (e) {
+      console.error('OpenClaw config write error:', e);
+    }
+  }
+
+  return existing;
 }
 
 // ===== 窗口创建 =====
@@ -208,8 +298,68 @@ function killProcessOnPort(port) {
   } catch { /* no process on port — fine */ }
 }
 
+// ===== OpenClaw 首次初始化（非交互 onboard）=====
+function ensureOnboarded(provider, apiKey, port) {
+  const ocHome = getOpenClawHome();
+  const markerFile = path.join(ocHome, '.onboarded');
+  if (fs.existsSync(markerFile)) return Promise.resolve();
+
+  const openclawEntry = getOpenClawEntry();
+  if (!openclawEntry || !apiKey) return Promise.resolve();
+
+  sendLog('info', '首次运行，正在初始化 OpenClaw 配置...');
+
+  const nodeBin = getBundledNodePath();
+  const authKeyMap = {
+    zai: '--zai-api-key', openai: '--openai-api-key', anthropic: '--anthropic-api-key',
+    deepseek: '--custom-api-key', moonshot: '--moonshot-api-key', minimax: '--minimax-api-key',
+  };
+  const authChoiceMap = {
+    zai: 'zai-api-key', openai: 'openai-api-key', anthropic: 'apiKey',
+    deepseek: 'custom-api-key', moonshot: 'moonshot-api-key', minimax: 'minimax-api-key',
+  };
+
+  const args = [
+    openclawEntry, 'onboard',
+    '--non-interactive', '--accept-risk',
+    '--mode', 'local',
+    '--flow', 'quickstart',
+    '--gateway-port', String(port || 3002),
+    '--gateway-auth', 'token',
+    '--skip-channels', '--skip-skills', '--skip-daemon', '--skip-ui', '--skip-health',
+    '--auth-choice', authChoiceMap[provider] || 'apiKey',
+    authKeyMap[provider] || '--custom-api-key', apiKey,
+  ];
+
+  return new Promise((resolve) => {
+    const proc = spawn(nodeBin, args, {
+      cwd: path.dirname(openclawEntry),
+      windowsHide: true,
+      timeout: 30000,
+    });
+    proc.stdout.on('data', (d) => {
+      const msg = d.toString().trim();
+      if (msg) sendLog('info', msg);
+    });
+    proc.stderr.on('data', (d) => {
+      const msg = d.toString().trim();
+      if (msg) sendLog('warn', msg);
+    });
+    proc.on('close', (code) => {
+      if (code === 0) {
+        try { fs.mkdirSync(ocHome, { recursive: true }); fs.writeFileSync(markerFile, new Date().toISOString()); } catch {}
+        sendLog('success', 'OpenClaw 初始化完成');
+      } else {
+        sendLog('warn', `初始化退出 (code: ${code})，尝试继续启动...`);
+      }
+      resolve();
+    });
+    proc.on('error', () => resolve());
+  });
+}
+
 // ===== OpenClaw 进程管理 =====
-function startOpenClaw() {
+async function startOpenClaw() {
   if (openclawProcess) {
     sendLog('warn', 'OpenClaw 已在运行');
     return;
@@ -220,16 +370,23 @@ function startOpenClaw() {
   const port = cfgGet('port') || 3002;
   const env = { ...process.env };
 
-  // 注入 API Key
+  // 注入 API Key（环境变量 + OpenClaw 配置文件双写）
+  const providerEnvMap = {
+    zai: 'ZAI_API_KEY', openai: 'OPENAI_API_KEY', anthropic: 'ANTHROPIC_API_KEY',
+    deepseek: 'DEEPSEEK_API_KEY', moonshot: 'MOONSHOT_API_KEY', minimax: 'MINIMAX_API_KEY',
+  };
   if (apiKey) {
-    const envMap = { zai: 'ZAI_API_KEY', openai: 'OPENAI_API_KEY', anthropic: 'ANTHROPIC_API_KEY' };
-    if (envMap[provider]) env[envMap[provider]] = apiKey;
+    const envKey = providerEnvMap[provider] || `${provider.toUpperCase()}_API_KEY`;
+    env[envKey] = apiKey;
   }
+
+  const model = cfgGet('model') || 'zai/glm-5';
+  await ensureOnboarded(provider, apiKey, port);
+  const ocConfig = ensureOpenClawConfig(provider, model, apiKey, port);
 
   // ===== Gateway 认证策略 =====
   // 优先级: Launcher accessToken > OpenClaw 配置文件 gateway.auth.token > 无认证
   const accessToken = (cfgGet('accessToken') || '').trim();
-  const ocConfig = readOpenClawConfig();
   const ocToken = ocConfig?.gateway?.auth?.token || '';
   gatewayToken = accessToken || ocToken;
   const useTokenAuth = gatewayToken.length > 0;
@@ -263,7 +420,7 @@ function startOpenClaw() {
 
   const openclawEntry = getOpenClawEntry();
   const nodeBin = getBundledNodePath();
-  const gatewayArgs = ['gateway', '--port', String(port)];
+  const gatewayArgs = ['gateway', '--port', String(port), '--allow-unconfigured'];
   if (useTokenAuth) {
     gatewayArgs.push('--auth', 'token', '--token', gatewayToken);
   } else {
