@@ -10,7 +10,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     start: () => ipcRenderer.invoke('openclaw:start'),
     stop: () => ipcRenderer.invoke('openclaw:stop'),
     getStatus: () => ipcRenderer.invoke('openclaw:status'),
+    needsOnboard: () => ipcRenderer.invoke('openclaw:needsOnboard'),
+    runOnboard: (opts) => ipcRenderer.invoke('openclaw:runOnboard', opts),
     onLog: (cb) => ipcRenderer.on('openclaw:log', (_, d) => cb(d)),
+    onOnboardLog: (cb) => ipcRenderer.on('openclaw:onboardLog', (_, d) => cb(d)),
     onStatus: (cb) => ipcRenderer.on('openclaw:status', (_, s) => cb(s)),
     onReady: (cb) => ipcRenderer.on('openclaw:ready', (_, data) => cb(data))
   },

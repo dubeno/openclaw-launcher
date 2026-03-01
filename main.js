@@ -129,14 +129,21 @@ function ensureOpenClawConfig(provider, model, apiKey, port) {
     zai: { baseUrl: 'https://open.bigmodel.cn/api/paas/v4', api: 'openai-completions' },
     openai: { baseUrl: 'https://api.openai.com/v1', api: 'openai-completions' },
     anthropic: { baseUrl: 'https://api.anthropic.com', api: 'anthropic-messages' },
-    deepseek: { baseUrl: 'https://api.deepseek.com/v1', api: 'openai-completions' },
-    moonshot: { baseUrl: 'https://api.moonshot.cn/v1', api: 'openai-completions' },
+    google: { baseUrl: 'https://generativelanguage.googleapis.com/v1beta', api: 'google-gemini' },
+    xai: { baseUrl: 'https://api.x.ai/v1', api: 'openai-completions' },
+    mistral: { baseUrl: 'https://api.mistral.ai/v1', api: 'openai-completions' },
     minimax: { baseUrl: 'https://api.minimax.chat/v1', api: 'openai-completions' },
+    'minimax-cn': { baseUrl: 'https://api.minimax.chat/v1', api: 'openai-completions' },
+    groq: { baseUrl: 'https://api.groq.com/openai/v1', api: 'openai-completions' },
+    openrouter: { baseUrl: 'https://openrouter.ai/api/v1', api: 'openai-completions' },
+    'openai-codex': { baseUrl: 'https://api.openai.com/v1', api: 'openai-completions' },
   };
 
   const providerEnvKeys = {
     zai: 'ZAI_API_KEY', openai: 'OPENAI_API_KEY', anthropic: 'ANTHROPIC_API_KEY',
-    deepseek: 'DEEPSEEK_API_KEY', moonshot: 'MOONSHOT_API_KEY', minimax: 'MINIMAX_API_KEY',
+    google: 'GOOGLE_API_KEY', xai: 'XAI_API_KEY', mistral: 'MISTRAL_API_KEY',
+    minimax: 'MINIMAX_API_KEY', 'minimax-cn': 'MINIMAX_API_KEY',
+    groq: 'GROQ_API_KEY', openrouter: 'OPENROUTER_API_KEY', 'openai-codex': 'OPENAI_API_KEY',
   };
 
   let existing = readOpenClawConfig();
@@ -286,38 +293,40 @@ function createTray() {
 function killProcessOnPort(port) {
   try {
     const { execSync } = require('child_process');
+    const hideOpts = { encoding: 'utf-8', timeout: 5000, windowsHide: true, stdio: 'pipe' };
     if (process.platform === 'win32') {
-      const out = execSync(`netstat -ano | findstr :${port} | findstr LISTENING`, { encoding: 'utf-8', timeout: 5000 });
+      const out = execSync(`netstat -ano | findstr :${port} | findstr LISTENING`, hideOpts);
       const pids = new Set(out.split('\n').map(l => l.trim().split(/\s+/).pop()).filter(p => p && /^\d+$/.test(p)));
       for (const pid of pids) {
-        try { execSync(`taskkill /PID ${pid} /F /T`, { timeout: 5000 }); } catch { /* already dead */ }
+        try { execSync(`taskkill /PID ${pid} /F /T`, hideOpts); } catch { /* already dead */ }
       }
     } else {
-      execSync(`lsof -ti:${port} | xargs -r kill -9`, { timeout: 5000 });
+      execSync(`lsof -ti:${port} | xargs -r kill -9`, hideOpts);
     }
   } catch { /* no process on port — fine */ }
 }
 
-// ===== OpenClaw 首次初始化（非交互 onboard）=====
-function ensureOnboarded(provider, apiKey, port) {
-  const ocHome = getOpenClawHome();
-  const markerFile = path.join(ocHome, '.onboarded');
-  if (fs.existsSync(markerFile)) return Promise.resolve();
+// ===== OpenClaw onboard 核心逻辑 =====
+const AUTH_KEY_MAP = {
+  zai: '--zai-api-key', openai: '--openai-api-key', anthropic: '--anthropic-api-key',
+  google: '--custom-api-key', xai: '--custom-api-key', mistral: '--custom-api-key',
+  minimax: '--custom-api-key', 'minimax-cn': '--custom-api-key',
+  groq: '--custom-api-key', openrouter: '--custom-api-key', 'openai-codex': '--openai-api-key',
+};
+const AUTH_CHOICE_MAP = {
+  zai: 'zai-api-key', openai: 'openai-api-key', anthropic: 'apiKey',
+  google: 'custom-api-key', xai: 'custom-api-key', mistral: 'custom-api-key',
+  minimax: 'custom-api-key', 'minimax-cn': 'custom-api-key',
+  groq: 'custom-api-key', openrouter: 'custom-api-key', 'openai-codex': 'openai-api-key',
+};
 
+function runOnboardProcess(provider, apiKey, port, logFn) {
   const openclawEntry = getOpenClawEntry();
-  if (!openclawEntry || !apiKey) return Promise.resolve();
-
-  sendLog('info', '首次运行，正在初始化 OpenClaw 配置...');
+  if (!openclawEntry) return Promise.reject(new Error('OpenClaw 运行时未找到'));
 
   const nodeBin = getBundledNodePath();
-  const authKeyMap = {
-    zai: '--zai-api-key', openai: '--openai-api-key', anthropic: '--anthropic-api-key',
-    deepseek: '--custom-api-key', moonshot: '--moonshot-api-key', minimax: '--minimax-api-key',
-  };
-  const authChoiceMap = {
-    zai: 'zai-api-key', openai: 'openai-api-key', anthropic: 'apiKey',
-    deepseek: 'custom-api-key', moonshot: 'moonshot-api-key', minimax: 'minimax-api-key',
-  };
+  const ocHome = getOpenClawHome();
+  const markerFile = path.join(ocHome, '.onboarded');
 
   const args = [
     openclawEntry, 'onboard',
@@ -327,34 +336,51 @@ function ensureOnboarded(provider, apiKey, port) {
     '--gateway-port', String(port || 3002),
     '--gateway-auth', 'token',
     '--skip-channels', '--skip-skills', '--skip-daemon', '--skip-ui', '--skip-health',
-    '--auth-choice', authChoiceMap[provider] || 'apiKey',
-    authKeyMap[provider] || '--custom-api-key', apiKey,
   ];
 
-  return new Promise((resolve) => {
+  if (apiKey) {
+    args.push('--auth-choice', AUTH_CHOICE_MAP[provider] || 'apiKey');
+    args.push(AUTH_KEY_MAP[provider] || '--custom-api-key', apiKey);
+  }
+
+  return new Promise((resolve, reject) => {
     const proc = spawn(nodeBin, args, {
       cwd: path.dirname(openclawEntry),
       windowsHide: true,
-      timeout: 30000,
+      timeout: 60000,
     });
     proc.stdout.on('data', (d) => {
       const msg = d.toString().trim();
-      if (msg) sendLog('info', msg);
+      if (msg) logFn('info', msg);
     });
     proc.stderr.on('data', (d) => {
       const msg = d.toString().trim();
-      if (msg) sendLog('warn', msg);
+      if (msg) logFn('warn', msg);
     });
     proc.on('close', (code) => {
       if (code === 0) {
         try { fs.mkdirSync(ocHome, { recursive: true }); fs.writeFileSync(markerFile, new Date().toISOString()); } catch {}
-        sendLog('success', 'OpenClaw 初始化完成');
+        logFn('success', 'OpenClaw 初始化完成');
+        resolve();
       } else {
-        sendLog('warn', `初始化退出 (code: ${code})，尝试继续启动...`);
+        logFn('warn', `初始化退出 (code: ${code})`);
+        reject(new Error(`onboard exited with code ${code}`));
       }
-      resolve();
     });
-    proc.on('error', () => resolve());
+    proc.on('error', (e) => reject(e));
+  });
+}
+
+// ===== OpenClaw 首次初始化（自动模式，从 startOpenClaw 调用）=====
+function ensureOnboarded(provider, apiKey, port) {
+  const ocHome = getOpenClawHome();
+  const markerFile = path.join(ocHome, '.onboarded');
+  if (fs.existsSync(markerFile)) return Promise.resolve();
+  if (!getOpenClawEntry() || !apiKey) return Promise.resolve();
+
+  sendLog('info', '首次运行，正在初始化 OpenClaw 配置...');
+  return runOnboardProcess(provider, apiKey, port, sendLog).catch(() => {
+    sendLog('warn', '自动初始化未完全成功，尝试继续启动...');
   });
 }
 
@@ -373,7 +399,9 @@ async function startOpenClaw() {
   // 注入 API Key（环境变量 + OpenClaw 配置文件双写）
   const providerEnvMap = {
     zai: 'ZAI_API_KEY', openai: 'OPENAI_API_KEY', anthropic: 'ANTHROPIC_API_KEY',
-    deepseek: 'DEEPSEEK_API_KEY', moonshot: 'MOONSHOT_API_KEY', minimax: 'MINIMAX_API_KEY',
+    google: 'GOOGLE_API_KEY', xai: 'XAI_API_KEY', mistral: 'MISTRAL_API_KEY',
+    minimax: 'MINIMAX_API_KEY', 'minimax-cn': 'MINIMAX_API_KEY',
+    groq: 'GROQ_API_KEY', openrouter: 'OPENROUTER_API_KEY', 'openai-codex': 'OPENAI_API_KEY',
   };
   if (apiKey) {
     const envKey = providerEnvMap[provider] || `${provider.toUpperCase()}_API_KEY`;
@@ -531,7 +559,7 @@ function stopOpenClaw() {
   sendStatus('stopping');
 
   if (process.platform === 'win32') {
-    spawn('taskkill', ['/pid', String(openclawProcess.pid), '/f', '/t'], { shell: true });
+    spawn('taskkill', ['/pid', String(openclawProcess.pid), '/f', '/t'], { windowsHide: true });
   } else {
     openclawProcess.kill('SIGTERM');
   }
@@ -562,11 +590,50 @@ function setupIPC() {
     if (mainWindow?.isMaximized()) mainWindow.unmaximize();
     else mainWindow?.maximize();
   });
-  ipcMain.on('window:close', () => mainWindow?.close());
+  ipcMain.on('window:close', () => {
+    isQuitting = true;
+    stopOpenClaw();
+    app.quit();
+  });
 
   ipcMain.handle('openclaw:start', () => { startOpenClaw(); return true; });
   ipcMain.handle('openclaw:stop', () => { stopOpenClaw(); return true; });
   ipcMain.handle('openclaw:status', () => openclawProcess ? 'running' : 'stopped');
+
+  ipcMain.handle('openclaw:needsOnboard', () => {
+    const markerFile = path.join(getOpenClawHome(), '.onboarded');
+    return !fs.existsSync(markerFile);
+  });
+
+  ipcMain.handle('openclaw:runOnboard', async (_, opts) => {
+    const { provider, apiKey, model, port } = opts || {};
+    if (provider) cfgSet('provider', provider);
+    if (apiKey) cfgSet('apiKey', apiKey);
+    if (model) cfgSet('model', model);
+    if (port) cfgSet('port', port);
+
+    const p = port || cfgGet('port') || 3002;
+    const prov = provider || cfgGet('provider') || 'zai';
+    const key = apiKey || cfgGet('apiKey') || '';
+    const mdl = model || cfgGet('model') || 'zai/glm-5';
+
+    const sendOnboardLog = (type, message) => {
+      sendToRenderer('openclaw:onboardLog', { type, message });
+    };
+
+    try {
+      sendOnboardLog('info', '正在初始化 OpenClaw 运行环境...');
+      await runOnboardProcess(prov, key, p, sendOnboardLog);
+      ensureOpenClawConfig(prov, mdl, key, p);
+      sendOnboardLog('success', '初始化完成！');
+      return { success: true };
+    } catch (e) {
+      sendOnboardLog('error', `初始化失败: ${e.message}`);
+      ensureOpenClawConfig(prov, mdl, key, p);
+      sendOnboardLog('info', '已写入基础配置，服务可能仍可启动');
+      return { success: false, error: e.message };
+    }
+  });
 
   ipcMain.handle('config:get', (_, key) => cfgGet(key));
   ipcMain.handle('config:set', (_, key, value) => { cfgSet(key, value); return true; });

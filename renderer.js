@@ -5,18 +5,37 @@ const $$ = (s) => document.querySelectorAll(s);
 
 let serviceRunning = false;
 
+const MODEL_SUGGESTIONS = {
+  zai: ['zai/glm-5', 'zai/glm-4.7', 'zai/glm-4.7-flash', 'zai/glm-4.6', 'zai/glm-4.5', 'zai/glm-4.5-flash'],
+  openai: ['openai/gpt-4.1', 'openai/gpt-4.1-mini', 'openai/gpt-4.1-nano', 'openai/gpt-4o', 'openai/gpt-4o-mini', 'openai/o3-mini', 'openai/codex-mini-latest'],
+  anthropic: ['anthropic/claude-sonnet-4', 'anthropic/claude-3-7-sonnet-latest', 'anthropic/claude-3-5-sonnet-latest', 'anthropic/claude-3-5-haiku-latest', 'anthropic/claude-3-opus-20240229'],
+  google: ['google/gemini-2.5-flash', 'google/gemini-2.5-pro', 'google/gemini-2.0-flash', 'google/gemini-2.0-flash-lite', 'google/gemini-1.5-pro'],
+  xai: ['xai/grok-3', 'xai/grok-3-fast', 'xai/grok-3-mini', 'xai/grok-3-mini-fast', 'xai/grok-2'],
+  mistral: ['mistral/devstral-medium-latest', 'mistral/codestral-latest', 'mistral/devstral-small-2507', 'mistral/magistral-medium-latest'],
+  minimax: ['minimax/MiniMax-M2.5', 'minimax/MiniMax-M2.5-highspeed', 'minimax/MiniMax-M2.1', 'minimax/MiniMax-M2'],
+  'minimax-cn': ['minimax-cn/MiniMax-M2.5', 'minimax-cn/MiniMax-M2.5-highspeed', 'minimax-cn/MiniMax-M2.1', 'minimax-cn/MiniMax-M2'],
+  groq: ['groq/llama-3.3-70b-versatile', 'groq/llama3-70b-8192', 'groq/deepseek-r1-distill-llama-70b', 'groq/gemma2-9b-it'],
+  openrouter: ['openrouter/deepseek/deepseek-chat-v3-0324', 'openrouter/deepseek/deepseek-r1', 'openrouter/qwen/qwen-2.5-coder-32b-instruct', 'openrouter/google/gemini-2.5-pro-preview'],
+  'openai-codex': ['openai-codex/gpt-5.2-codex', 'openai-codex/gpt-5.1-codex-mini', 'openai-codex/gpt-5.3-codex'],
+};
+
 // ===== 初始化（不阻塞渲染）=====
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   setupWindowControls();
   setupButtons();
   setupConfigPanel();
   setupIPCListeners();
-  // 配置延迟加载，不阻塞首帧（兼容不支持 requestIdleCallback 的环境）
+
+  const needsOnboard = await openclaw.needsOnboard();
+  if (needsOnboard) {
+    setupWizard();
+    return;
+  }
+
   const idleLoad = window.requestIdleCallback
     ? (fn) => window.requestIdleCallback(fn)
     : (fn) => setTimeout(fn, 1);
   idleLoad(() => loadConfig());
-  // 快速检查状态
   openclaw.getStatus().then(s => {
     if (s === 'running') { updateStatus('running'); loadWebView(); }
   });
@@ -300,4 +319,95 @@ function esc(text) {
   const d = document.createElement('div');
   d.textContent = text;
   return d.innerHTML;
+}
+
+// ===== 首次设置向导 =====
+function setupWizard() {
+  const overlay = $('#wizard-overlay');
+  overlay.classList.add('active');
+  $('#splash').classList.add('hidden');
+
+  const providerSelect = $('#wiz-provider');
+  const modelInput = $('#wiz-model');
+  const datalist = $('#wiz-model-suggestions');
+
+  function updateModelSuggestions() {
+    const provider = providerSelect.value;
+    const models = MODEL_SUGGESTIONS[provider] || [];
+    datalist.innerHTML = models.map(m => `<option value="${m}">`).join('');
+    if (models.length > 0) modelInput.value = models[0];
+    else modelInput.value = '';
+  }
+  providerSelect.onchange = updateModelSuggestions;
+  updateModelSuggestions();
+
+  $('#wiz-toggle-key').onclick = () => {
+    const i = $('#wiz-apikey');
+    i.type = i.type === 'password' ? 'text' : 'password';
+  };
+
+  $('#wiz-submit').onclick = () => runWizardOnboard(false);
+  $('#wiz-skip').onclick = () => runWizardOnboard(true);
+
+  openclaw.onOnboardLog(appendWizardLog);
+
+  $('#wiz-launch').onclick = () => {
+    overlay.classList.remove('active');
+    $('#splash').classList.remove('hidden');
+    const idleLoad = window.requestIdleCallback
+      ? (fn) => window.requestIdleCallback(fn)
+      : (fn) => setTimeout(fn, 1);
+    idleLoad(() => loadConfig());
+    openclaw.start();
+  };
+}
+
+async function runWizardOnboard(skip) {
+  const provider = $('#wiz-provider').value;
+  const apiKey = skip ? '' : $('#wiz-apikey').value.trim();
+  const model = skip ? '' : $('#wiz-model').value.trim();
+  const port = parseInt($('#wiz-port').value) || 3002;
+
+  if (!skip && !apiKey) {
+    showToast('请输入 API Key', 'warning');
+    $('#wiz-apikey').focus();
+    return;
+  }
+
+  $('#wizard-step-config').style.display = 'none';
+  $('#wizard-step-progress').style.display = 'block';
+
+  try {
+    const result = await openclaw.runOnboard({ provider, apiKey, model, port });
+    showWizardDone(result.success);
+  } catch (e) {
+    appendWizardLog({ type: 'error', message: e.message || '未知错误' });
+    showWizardDone(false);
+  }
+}
+
+function showWizardDone(success) {
+  $('#wizard-step-progress').style.display = 'none';
+  const doneStep = $('#wizard-step-done');
+  doneStep.style.display = 'block';
+  if (!success) {
+    doneStep.querySelector('.wizard-desc').textContent = '部分配置可能未完成，但基础设置已写入，仍可尝试启动。';
+  }
+}
+
+function appendWizardLog(data) {
+  const c = $('#wiz-log');
+  if (!c) return;
+  const t = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  const el = document.createElement('div');
+  el.className = 'log-line';
+  el.innerHTML = `<span class="log-time">${t}</span><span class="msg-${data.type}">${esc(data.message)}</span>`;
+  c.appendChild(el);
+  c.scrollTop = c.scrollHeight;
+  while (c.childElementCount > 80) c.removeChild(c.firstChild);
+
+  if (data.type === 'info' || data.type === 'warn') {
+    const msg = $('#wiz-progress-msg');
+    if (msg) msg.textContent = data.message;
+  }
 }

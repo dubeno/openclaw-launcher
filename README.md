@@ -7,11 +7,33 @@
 ## 功能
 
 - 内嵌 Node.js + OpenClaw 运行时，开箱即用
+- **首次启动向导**：图形化引导完成提供商、API Key、模型配置，无需命令行
 - 自动读取 `~/.openclaw/openclaw.json` 的 Gateway Token，WebView 免手动认证
-- 支持任意模型（`provider/model` 自由输入），不限提供商
+- 支持 **22 个提供商、757+ 模型**（`provider/model` 自由输入），不限提供商
 - 多频道接入：Web UI / 微信 / Telegram / Discord / Slack / 钉钉 / 飞书
 - 自定义无边框窗口 + 系统托盘常驻
 - Windows / macOS / Linux 跨平台
+
+## 支持的提供商
+
+| 提供商 | 说明 |
+|--------|------|
+| `zai` | Z.AI 智谱 |
+| `openai` | OpenAI |
+| `anthropic` | Anthropic (Claude) |
+| `google` | Google Gemini |
+| `xai` | xAI (Grok) |
+| `mistral` | Mistral |
+| `minimax` / `minimax-cn` | MiniMax (国际/中国) |
+| `groq` | Groq |
+| `openrouter` | OpenRouter (聚合 200+ 模型) |
+| `openai-codex` | OpenAI Codex |
+| `amazon-bedrock` | Amazon Bedrock |
+| `google-vertex` | Google Vertex AI |
+| `azure-openai-responses` | Azure OpenAI |
+| `cerebras` / `huggingface` / `kimi-coding` | 更多提供商 |
+
+完整列表可运行 `openclaw models list --all` 查看。
 
 ## 项目结构
 
@@ -142,9 +164,11 @@ npm run build:win
 
 1. 解压 ZIP 或运行安装包
 2. 双击 `OpenClaw Launcher.exe`
-3. 点击右上角 ⚙️ 设置，填入 **API Key**（如 [Z.AI 智谱](https://open.bigmodel.cn/) 的密钥）
-4. 点击 **保存配置** → **启动**
-5. Dashboard 加载完成后即可开始对话
+3. 首次启动会显示**设置向导**，选择提供商、填入 API Key、选择模型
+4. 点击 **开始配置**，等待初始化完成
+5. 点击 **启动 OpenClaw**，Dashboard 加载完成后即可开始对话
+
+如果跳过了向导，也可以随时点击右上角 ⚙️ 手动配置。
 
 ### 模型配置
 
@@ -153,13 +177,16 @@ npm run build:win
 | 提供商 | 模型 ID 示例 |
 |--------|-------------|
 | Z.AI (智谱) | `zai/glm-5`、`zai/glm-4.7`、`zai/glm-4.7-flash` |
-| OpenAI | `openai/gpt-4o`、`openai/o3-mini` |
-| Anthropic | `anthropic/claude-4-opus`、`anthropic/claude-4-sonnet` |
-| DeepSeek | `deepseek/deepseek-chat`、`deepseek/deepseek-reasoner` |
-| Moonshot | `moonshot/moonshot-v1-auto` |
-| MiniMax | `minimax/abab7-chat` |
+| OpenAI | `openai/gpt-4.1`、`openai/gpt-4.1-mini`、`openai/gpt-4o` |
+| Anthropic | `anthropic/claude-sonnet-4`、`anthropic/claude-3-7-sonnet-latest` |
+| Google | `google/gemini-2.5-flash`、`google/gemini-2.5-pro` |
+| xAI | `xai/grok-3`、`xai/grok-3-mini` |
+| Mistral | `mistral/devstral-medium-latest`、`mistral/codestral-latest` |
+| MiniMax | `minimax/MiniMax-M2.5`、`minimax-cn/MiniMax-M2.5` |
+| Groq | `groq/llama-3.3-70b-versatile` |
+| OpenRouter | `openrouter/deepseek/deepseek-chat-v3-0324` |
 
-输入框支持自由输入，也可从下拉列表选择常用模型。
+输入框支持自由输入，也可从下拉列表选择常用模型。完整模型列表可运行 `openclaw models list --all` 查看。
 
 ## License
 

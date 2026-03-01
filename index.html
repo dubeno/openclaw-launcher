@@ -40,6 +40,80 @@
 
   <!-- ===== 主内容区：WebView 加载 OpenClaw Web UI ===== -->
   <div class="main-area">
+    <!-- 首次设置向导 -->
+    <div class="wizard-overlay" id="wizard-overlay">
+      <div class="wizard-card">
+        <!-- Step 1: 欢迎 + 配置 -->
+        <div class="wizard-step" id="wizard-step-config">
+          <div class="wizard-logo">⚡</div>
+          <h1 class="wizard-title">欢迎使用 OpenClaw</h1>
+          <p class="wizard-desc">首次使用需要完成基本配置，只需几步即可开始。</p>
+
+          <div class="wizard-form">
+            <div class="form-group">
+              <label class="form-label">模型提供商</label>
+              <select class="form-select" id="wiz-provider">
+                <option value="zai">Z.AI (智谱)</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="google">Google (Gemini)</option>
+                <option value="xai">xAI (Grok)</option>
+                <option value="mistral">Mistral</option>
+                <option value="minimax">MiniMax</option>
+                <option value="minimax-cn">MiniMax (中国)</option>
+                <option value="groq">Groq</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="openai-codex">OpenAI Codex</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">API Key</label>
+              <div class="input-with-btn">
+                <input type="password" class="form-input mono" id="wiz-apikey" placeholder="sk-..." autocomplete="off">
+                <button class="btn-icon" id="wiz-toggle-key" title="显示/隐藏">👁</button>
+              </div>
+              <div class="form-hint">在提供商官网获取 API Key</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">默认模型</label>
+              <input type="text" class="form-input mono" id="wiz-model" list="wiz-model-suggestions" placeholder="provider/model-name" autocomplete="off">
+              <datalist id="wiz-model-suggestions"></datalist>
+              <div class="form-hint">输入任意模型 ID 或从建议列表选择</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">服务端口 <span style="color:#888;font-weight:normal;">(可选)</span></label>
+              <input type="number" class="form-input" id="wiz-port" value="3002" min="1024" max="65535">
+            </div>
+
+            <button class="btn-primary full-width wizard-submit" id="wiz-submit">开始配置</button>
+            <button class="btn-secondary full-width" id="wiz-skip" style="margin-top:8px;">跳过，使用默认设置</button>
+          </div>
+        </div>
+
+        <!-- Step 2: 初始化进度 -->
+        <div class="wizard-step" id="wizard-step-progress" style="display:none;">
+          <div class="wizard-logo spinning">⚡</div>
+          <h1 class="wizard-title">正在初始化</h1>
+          <p class="wizard-desc" id="wiz-progress-msg">正在配置 OpenClaw 运行环境...</p>
+          <div class="splash-loader" style="margin:16px auto 20px;">
+            <div class="loader-bar"></div>
+          </div>
+          <div class="wizard-log" id="wiz-log"></div>
+        </div>
+
+        <!-- Step 3: 完成 -->
+        <div class="wizard-step" id="wizard-step-done" style="display:none;">
+          <div class="wizard-logo done">✓</div>
+          <h1 class="wizard-title">配置完成</h1>
+          <p class="wizard-desc">OpenClaw 已准备就绪，即将启动服务...</p>
+          <button class="btn-primary full-width" id="wiz-launch" style="margin-top:20px;">启动 OpenClaw</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 启动中 / 等待页面 -->
     <div class="splash" id="splash">
       <div class="splash-content">
@@ -77,6 +151,14 @@
           <option value="zai">Z.AI (智谱)</option>
           <option value="openai">OpenAI</option>
           <option value="anthropic">Anthropic</option>
+          <option value="google">Google (Gemini)</option>
+          <option value="xai">xAI (Grok)</option>
+          <option value="mistral">Mistral</option>
+          <option value="minimax">MiniMax</option>
+          <option value="minimax-cn">MiniMax (中国)</option>
+          <option value="groq">Groq</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="openai-codex">OpenAI Codex</option>
         </select>
       </div>
 
@@ -99,24 +181,27 @@
       <!-- 模型 -->
       <div class="form-group">
         <label class="form-label">默认模型</label>
-        <input type="text" class="form-input mono" id="cfg-model" list="model-suggestions" placeholder="provider/model-name" value="zai/glm-5" autocomplete="off">
+        <input type="text" class="form-input mono" id="cfg-model" list="model-suggestions" placeholder="provider/model-name" autocomplete="off">
         <datalist id="model-suggestions">
           <option value="zai/glm-5">
-          <option value="zai/glm-4-plus">
-          <option value="zai/glm-4-flash">
           <option value="zai/glm-4.7">
           <option value="zai/glm-4.7-flash">
+          <option value="zai/glm-4.6">
+          <option value="zai/glm-4.5">
+          <option value="openai/gpt-4.1">
+          <option value="openai/gpt-4.1-mini">
           <option value="openai/gpt-4o">
-          <option value="openai/gpt-4o-mini">
-          <option value="openai/o1">
           <option value="openai/o3-mini">
-          <option value="anthropic/claude-4-opus">
-          <option value="anthropic/claude-4-sonnet">
-          <option value="anthropic/claude-3.5-sonnet">
-          <option value="deepseek/deepseek-chat">
-          <option value="deepseek/deepseek-reasoner">
-          <option value="moonshot/moonshot-v1-auto">
-          <option value="minimax/abab7-chat">
+          <option value="anthropic/claude-sonnet-4">
+          <option value="anthropic/claude-3-7-sonnet-latest">
+          <option value="anthropic/claude-3-5-sonnet-latest">
+          <option value="google/gemini-2.5-flash">
+          <option value="google/gemini-2.5-pro">
+          <option value="xai/grok-3">
+          <option value="xai/grok-3-mini">
+          <option value="mistral/devstral-medium-latest">
+          <option value="groq/llama-3.3-70b-versatile">
+          <option value="minimax/MiniMax-M2.5">
         </datalist>
         <div class="form-hint">输入任意模型 ID（格式: provider/model），或从下拉列表选择</div>
       </div>
