@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenClaw Launcher</title>
+  <!-- 关键内联样式：消除白屏闪烁 -->
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#0f0f17;color:#e8e8f0;overflow:hidden;height:100vh;font-family:'Segoe UI',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;user-select:none}
+    .titlebar{display:flex;align-items:center;justify-content:space-between;height:42px;background:#161625;border-bottom:1px solid #2a2a45;-webkit-app-region:drag;padding:0 10px}
+    .splash{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#0f0f17}
+    .splash-logo{width:80px;height:80px;background:linear-gradient(135deg,#6c5ce7,#a855f7);border-radius:22px;display:flex;align-items:center;justify-content:center;font-size:38px;margin:0 auto 20px;box-shadow:0 8px 40px rgba(108,92,231,0.3)}
+  </style>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ===== 自定义标题栏 ===== -->
+  <div class="titlebar">
+    <div class="titlebar-left">
+      <div class="titlebar-logo">⚡</div>
+      <span class="titlebar-title">OpenClaw Launcher</span>
+      <span class="titlebar-status" id="titlebar-status">
+        <span class="status-dot stopped" id="status-dot"></span>
+        <span id="status-text">未启动</span>
+      </span>
+    </div>
+    <div class="titlebar-actions">
+      <button class="tb-btn start-btn" id="btn-start" title="启动服务">▶ 启动</button>
+      <button class="tb-btn stop-btn" id="btn-stop" title="停止服务" disabled>⏹ 停止</button>
+      <button class="tb-btn config-btn" id="btn-config" title="设置">⚙️</button>
+    </div>
+    <div class="titlebar-controls">
+      <button class="titlebar-btn" id="btn-minimize">─</button>
+      <button class="titlebar-btn" id="btn-maximize">□</button>
+      <button class="titlebar-btn close" id="btn-close">✕</button>
+    </div>
+  </div>
+
+  <!-- ===== 主内容区：WebView 加载 OpenClaw Web UI ===== -->
+  <div class="main-area">
+    <!-- 启动中 / 等待页面 -->
+    <div class="splash" id="splash">
+      <div class="splash-content">
+        <div class="splash-logo">⚡</div>
+        <h1>OpenClaw</h1>
+        <p class="splash-subtitle" id="splash-msg">正在启动服务...</p>
+        <div class="splash-loader" id="splash-loader">
+          <div class="loader-bar"></div>
+        </div>
+        <div class="splash-log" id="splash-log"></div>
+        <button class="btn-primary" id="splash-start-btn" style="display:none;">▶ 启动 OpenClaw 服务</button>
+      </div>
+    </div>
+
+    <!-- 内嵌 Web UI -->
+    <webview id="webview"
+      src="about:blank"
+      style="display:none; width:100%; height:100%;"
+      allowpopups>
+    </webview>
+  </div>
+
+  <!-- ===== 设置面板（侧滑） ===== -->
+  <div class="config-overlay" id="config-overlay"></div>
+  <div class="config-panel" id="config-panel">
+    <div class="config-header">
+      <h2>⚙️ 配置</h2>
+      <button class="config-close" id="btn-config-close">✕</button>
+    </div>
+    <div class="config-body">
+      <!-- 提供商 -->
+      <div class="form-group">
+        <label class="form-label">模型提供商</label>
+        <select class="form-select" id="cfg-provider">
+          <option value="zai">Z.AI (智谱)</option>
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">Anthropic</option>
+        </select>
+      </div>
+
+      <!-- API Key -->
+      <div class="form-group">
+        <label class="form-label">API Key</label>
+        <div class="input-with-btn">
+          <input type="password" class="form-input mono" id="cfg-apikey" placeholder="sk-..." autocomplete="off">
+          <button class="btn-icon" id="btn-toggle-key" title="显示/隐藏">👁</button>
+        </div>
+      </div>
+
+      <!-- Web UI Access Token（可选） -->
+      <div class="form-group">
+        <label class="form-label">Web UI 访问令牌 <span style="color:#888;font-weight:normal;">(可选)</span></label>
+        <input type="password" class="form-input mono" id="cfg-access-token" placeholder="留空则无需认证" autocomplete="off">
+        <div class="form-hint">OpenClaw Web UI 的访问密码，留空表示本地免认证</div>
+      </div>
+
+      <!-- 模型 -->
+      <div class="form-group">
+        <label class="form-label">默认模型</label>
+        <input type="text" class="form-input mono" id="cfg-model" list="model-suggestions" placeholder="provider/model-name" value="zai/glm-5" autocomplete="off">
+        <datalist id="model-suggestions">
+          <option value="zai/glm-5">
+          <option value="zai/glm-4-plus">
+          <option value="zai/glm-4-flash">
+          <option value="zai/glm-4.7">
+          <option value="zai/glm-4.7-flash">
+          <option value="openai/gpt-4o">
+          <option value="openai/gpt-4o-mini">
+          <option value="openai/o1">
+          <option value="openai/o3-mini">
+          <option value="anthropic/claude-4-opus">
+          <option value="anthropic/claude-4-sonnet">
+          <option value="anthropic/claude-3.5-sonnet">
+          <option value="deepseek/deepseek-chat">
+          <option value="deepseek/deepseek-reasoner">
+          <option value="moonshot/moonshot-v1-auto">
+          <option value="minimax/abab7-chat">
+        </datalist>
+        <div class="form-hint">输入任意模型 ID（格式: provider/model），或从下拉列表选择</div>
+      </div>
+
+      <!-- Channel 频道 -->
+      <div class="form-group">
+        <label class="form-label">接入频道 (Channel)</label>
+        <select class="form-select" id="cfg-channel">
+          <option value="web">🌐 Web UI (默认)</option>
+          <option value="wechat">💬 微信 (WeChat)</option>
+          <option value="telegram">✈️ Telegram</option>
+          <option value="discord">🎮 Discord</option>
+          <option value="slack">💼 Slack</option>
+          <option value="dingtalk">🔔 钉钉 (DingTalk)</option>
+          <option value="feishu">🐦 飞书 (Feishu)</option>
+        </select>
+        <div class="form-hint">选择 OpenClaw 接入的消息通道</div>
+      </div>
+
+      <!-- Channel 专属配置（动态显示） -->
+      <div id="channel-fields">
+        <!-- 微信 -->
+        <div class="channel-section" data-channel="wechat" style="display:none;">
+          <div class="form-group">
+            <label class="form-label">App ID</label>
+            <input type="text" class="form-input mono" id="cfg-wechat-appid" placeholder="wx..." autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label class="form-label">App Secret</label>
+            <input type="password" class="form-input mono" id="cfg-wechat-secret" placeholder="微信 App Secret" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Token</label>
+            <input type="text" class="form-input mono" id="cfg-wechat-token" placeholder="消息验证 Token" autocomplete="off">
+          </div>
+        </div>
+
+        <!-- Telegram -->
+        <div class="channel-section" data-channel="telegram" style="display:none;">
+          <div class="form-group">
+            <label class="form-label">Bot Token</label>
+            <input type="password" class="form-input mono" id="cfg-telegram-token" placeholder="123456:ABC-DEF..." autocomplete="off">
+          </div>
+        </div>
+
+        <!-- Discord -->
+        <div class="channel-section" data-channel="discord" style="display:none;">
+          <div class="form-group">
+            <label class="form-label">Bot Token</label>
+            <input type="password" class="form-input mono" id="cfg-discord-token" placeholder="Discord Bot Token" autocomplete="off">
+          </div>
+        </div>
+
+        <!-- Slack -->
+        <div class="channel-section" data-channel="slack" style="display:none;">
+          <div class="form-group">
+            <label class="form-label">Bot Token</label>
+            <input type="password" class="form-input mono" id="cfg-slack-token" placeholder="xoxb-..." autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Signing Secret</label>
+            <input type="password" class="form-input mono" id="cfg-slack-secret" placeholder="Slack Signing Secret" autocomplete="off">
+          </div>
+        </div>
+
+        <!-- 钉钉 -->
+        <div class="channel-section" data-channel="dingtalk" style="display:none;">
+          <div class="form-group">
+            <label class="form-label">App Key</label>
+            <input type="text" class="form-input mono" id="cfg-dingtalk-key" placeholder="钉钉 App Key" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label class="form-label">App Secret</label>
+            <input type="password" class="form-input mono" id="cfg-dingtalk-secret" placeholder="钉钉 App Secret" autocomplete="off">
+          </div>
+        </div>
+
+        <!-- 飞书 -->
+        <div class="channel-section" data-channel="feishu" style="display:none;">
+          <div class="form-group">
+            <label class="form-label">App ID</label>
+            <input type="text" class="form-input mono" id="cfg-feishu-appid" placeholder="cli_..." autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label class="form-label">App Secret</label>
+            <input type="password" class="form-input mono" id="cfg-feishu-secret" placeholder="飞书 App Secret" autocomplete="off">
+          </div>
+        </div>
+      </div>
+
+      <div class="config-divider"></div>
+
+      <!-- 端口 -->
+      <div class="form-group">
+        <label class="form-label">服务端口</label>
+        <input type="number" class="form-input" id="cfg-port" value="3002" min="1024" max="65535">
+        <div class="form-hint">OpenClaw Gateway 运行端口</div>
+      </div>
+
+      <!-- 自动启动 -->
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <span class="toggle-label">启动时自动运行服务</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="cfg-autostart" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="config-footer">
+        <button class="btn-primary full-width" id="btn-save-config">💾 保存配置</button>
+        <button class="btn-secondary full-width" id="btn-restart" style="margin-top:8px;">🔄 重启服务</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script src="renderer.js" defer></script>
+</body>
+</html>
