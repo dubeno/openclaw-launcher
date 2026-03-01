@@ -245,9 +245,10 @@ function createWindow() {
     mainWindow.show();
   });
 
-  // 窗口显示后再自动启动服务（不阻塞窗口渲染）
+  // 窗口显示后再自动启动服务（向导未完成时跳过，避免与向导冲突）
   mainWindow.webContents.once('did-finish-load', () => {
-    if (cfgGet('autoStart')) {
+    const needsWizard = !fs.existsSync(path.join(getOpenClawHome(), '.onboarded'));
+    if (cfgGet('autoStart') && !needsWizard) {
       setTimeout(() => startOpenClaw(), 200);
     }
   });

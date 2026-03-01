@@ -351,14 +351,18 @@ function setupWizard() {
 
   openclaw.onOnboardLog(appendWizardLog);
 
-  $('#wiz-launch').onclick = () => {
+  $('#wiz-launch').onclick = async () => {
     overlay.classList.remove('active');
     $('#splash').classList.remove('hidden');
+    $('#splash-msg').textContent = '正在启动服务...';
+    $('#splash-loader').style.display = 'block';
+    $('#splash-start-btn').style.display = 'none';
     const idleLoad = window.requestIdleCallback
       ? (fn) => window.requestIdleCallback(fn)
       : (fn) => setTimeout(fn, 1);
     idleLoad(() => loadConfig());
-    openclaw.start();
+    await openclaw.stop();
+    setTimeout(() => openclaw.start(), 500);
   };
 }
 
